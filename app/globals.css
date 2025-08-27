@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .diff-cell-added {
+    @apply bg-diff-added border-green-300;
+  }
+  
+  .diff-cell-removed {
+    @apply bg-diff-removed border-red-300;
+  }
+  
+  .diff-cell-changed {
+    @apply bg-diff-changed border-yellow-300;
+  }
+  
+  .file-upload-zone {
+    @apply border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors;
+  }
+  
+  .file-upload-zone.dragover {
+    @apply border-blue-500 bg-blue-50;
+  }
+}
