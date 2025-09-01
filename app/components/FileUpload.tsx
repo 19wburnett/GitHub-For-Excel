@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { ExcelData } from '../types'
+import { ExcelData, UploadResponse } from '../types'
 
 interface FileUploadProps {
   label: string
-  onFileUpload: (data: ExcelData) => void
-  fileData: ExcelData | null
-  onUploadSuccess?: (data: ExcelData) => void
+  onFileUpload: (data: UploadResponse) => void
+  onUploadSuccess?: (uploadResult: UploadResponse) => void
+  fileData: UploadResponse | null
 }
 
 export default function FileUpload({ label, onFileUpload, fileData, onUploadSuccess }: FileUploadProps) {
@@ -63,6 +63,7 @@ export default function FileUpload({ label, onFileUpload, fileData, onUploadSucc
 
       if (response.ok) {
         const data = await response.json()
+        // The upload response now contains fileId, fileName, sheetCount, etc.
         onFileUpload(data)
         // Call onUploadSuccess if provided
         if (onUploadSuccess) {
@@ -84,7 +85,7 @@ export default function FileUpload({ label, onFileUpload, fileData, onUploadSucc
   }
 
   const removeFile = () => {
-    onFileUpload({} as ExcelData)
+    onFileUpload({} as UploadResponse)
   }
 
   return (
@@ -134,8 +135,8 @@ export default function FileUpload({ label, onFileUpload, fileData, onUploadSucc
               <div>
                 <p className="font-medium text-gray-900">{fileData.fileName}</p>
                 <p className="text-sm text-gray-500">
-                  {fileData.sheets.length} sheet{fileData.sheets.length !== 1 ? 's' : ''} • 
-                  {new Date(fileData.uploadedAt).toLocaleString()}
+                  {fileData.sheetCount} sheet{fileData.sheetCount !== 1 ? 's' : ''} • 
+                  File ID: {fileData.fileId?.substring(0, 8)}...
                 </p>
               </div>
             </div>
