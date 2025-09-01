@@ -1,78 +1,169 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ComparisonResult, CellDiff, SheetDiff } from '../types'
+import { ComparisonResult, SheetDiff, CellDiff } from '../types'
 
 interface ComparisonResultsProps {
   result: ComparisonResult
-  onReset?: () => void
 }
 
-export default function ComparisonResults({ result, onReset }: ComparisonResultsProps) {
+type SortField = 'address' | 'type' | 'row' | 'col' | 'oldValue' | 'newValue'
+type SortDirection = 'asc' | 'desc'
+type ChangeType = 'added' | 'removed' | 'changed' | 'all'
+
+export default function ComparisonResults({ result }: ComparisonResultsProps) {
   const [selectedSheet, setSelectedSheet] = useState<string>(result.sheets[0]?.sheetName || '')
-  const [showFormulas, setShowFormulas] = useState(true)
-  const [changeTypeFilter, setChangeTypeFilter] = useState<string>('all')
-  const [formulaChangeFilter, setFormulaChangeFilter] = useState<string>('all')
+  const [showFormulas, setShowFormulas] = useState(true) // Always show formulas by default
+  
+  // Filtering state
+  const [changeTypeFilter, setChangeTypeFilter] = useState<ChangeType>('all')
+  const [formulaChangeFilter, setFormulaChangeFilter] = useState<'all' | 'formula-changed' | 'formula-unchanged'>('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [sortField, setSortField] = useState<string>('address')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>('address')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Get all cells from all sheets
-  const allCells = useMemo(() => {
-    const cells: (CellDiff & { sheetName: string })[] = []
-    result.sheets.forEach(sheet => {
-      if (sheet.addedCells) {
-        sheet.addedCells.forEach(cell => cells.push({ ...cell, sheetName: sheet.sheetName }))
-      }
-      if (sheet.removedCells) {
-        sheet.removedCells.forEach(cell => cells.push({ ...cell, sheetName: sheet.sheetName }))
-      }
-      if (sheet.changedCells) {
-        sheet.changedCells.forEach(cell => cells.push({ ...cell, sheetName: sheet.sheetName }))
-      }
-    })
-    return cells
-  }, [result.sheets])
+  const selectedSheetData = result.sheets.find(sheet => sheet.sheetName === selectedSheet)
 
-  // Filter cells based on selected sheet and filters
-  const filteredCells = useMemo(() => {
-    return allCells.filter(cell => {
-      // Filter by sheet
-      if (selectedSheet && cell.sheetName !== selectedSheet) return false
+  const hasFormulaChanges = (cell: CellDiff) => {
+    // Check if formulas actually changed (not just if they exist)
+    if (cell.type === 'added') {
+      return !!cell.newFormula
+    }
+    if (cell.type === 'removed') {
+      return !!cell.oldFormula
+    }
+    if (cell.type === 'changed') {
+      return cell.oldFormula !== cell.newFormula
+    }
+    return false
+  }
+
+  // Enhanced formula analysis - detect meaningful formula changes
+  const getFormulaChangeType = (cell: CellDiff) => {
+    if (!hasFormulaChanges(cell)) return 'none'
+    
+    if (cell.type === 'added') return 'formula-added'
+    if (cell.type === 'removed') return 'formula-removed'
+    
+    // For changed cells, analyze the type of change
+    if (cell.type === 'changed') {
+      const oldFormula = cell.oldFormula || ''
+      const newFormula = cell.newFormula || ''
       
-      // Filter by change type
-      if (changeTypeFilter !== 'all' && cell.type !== changeTypeFilter) return false
-      
-      // Filter by formula changes
-      if (formulaChangeFilter !== 'all') {
-        const formulaChangeType = getFormulaChangeType(cell)
-        if (formulaChangeType !== formulaChangeFilter) return false
-      }
-      
-      // Filter by search term
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase()
-        const matchesAddress = cell.address.toLowerCase().includes(searchLower)
-        const matchesOldValue = String(cell.oldValue || '').toLowerCase().includes(searchLower)
-        const matchesNewValue = String(cell.newValue || '').toLowerCase().includes(searchLower)
-        const matchesOldFormula = (cell.oldFormula || '').toLowerCase().includes(searchLower)
-        const matchesNewFormula = (cell.newFormula || '').toLowerCase().includes(searchLower)
-        
-        if (!matchesAddress && !matchesOldValue && !matchesNewValue && !matchesOldFormula && !matchesNewFormula) {
-          return false
+      if (oldFormula && newFormula) {
+        // Check if it's a reference change, function change, or value change
+        if (oldFormula.includes('=') && newFormula.includes('=')) {
+          // Both are formulas - check for significant changes
+          const oldRefs = oldFormula.match(/[A-Z]+\d+/g) || []
+          const newRefs = newFormula.match(/[A-Z]+\d+/g) || []
+          
+          if (JSON.stringify(oldRefs.sort()) !== JSON.stringify(newRefs.sort())) {
+            return 'reference-changed'
+          }
+          
+          // Check for function changes
+          const oldFuncs = oldFormula.match(/[A-Z]+\(/g) || []
+          const newFuncs = newFormula.match(/[A-Z]+\(/g) || []
+          
+          if (JSON.stringify(oldFuncs.sort()) !== JSON.stringify(newFuncs.sort())) {
+            return 'function-changed'
+          }
+          
+          return 'formula-modified'
         }
       }
       
+      return 'formula-changed'
+    }
+    
+    return 'none'
+  }
+
+  // Calculate the impact of formula changes on values
+  const getValueImpact = (cell: CellDiff) => {
+    if (cell.type !== 'changed' || !cell.oldFormula || !cell.newFormula) return null
+    
+    const oldValue = cell.oldValue
+    const newValue = cell.newValue
+    
+    if (oldValue === null || newValue === null) return null
+    
+    // Try to calculate percentage change for numeric values
+    if (typeof oldValue === 'number' && typeof newValue === 'number') {
+      if (oldValue === 0) return newValue === 0 ? 'no-change' : 'infinite-change'
+      
+      const percentChange = ((newValue - oldValue) / Math.abs(oldValue)) * 100
+      if (Math.abs(percentChange) < 0.01) return 'minimal-change'
+      if (percentChange > 0) return 'increased'
+      if (percentChange < 0) return 'decreased'
+    }
+    
+    // For non-numeric or mixed types, check if values are different
+    if (oldValue !== newValue) return 'value-changed'
+    
+    return 'no-change'
+  }
+
+  // Get all cells for the selected sheet with their types
+  const allCells = useMemo(() => {
+    if (!selectedSheetData) return []
+    
+    return [
+      ...selectedSheetData.addedCells.map(cell => ({ ...cell, type: 'added' as const })),
+      ...selectedSheetData.removedCells.map(cell => ({ ...cell, type: 'removed' as const })),
+      ...selectedSheetData.changedCells.map(cell => ({ ...cell, type: 'changed' as const }))
+    ]
+  }, [selectedSheetData])
+
+  // Apply filters and search
+  const filteredCells = useMemo(() => {
+    if (!allCells.length) return []
+
+    return allCells.filter(cell => {
+      // Filter by change type
+      if (changeTypeFilter !== 'all' && cell.type !== changeTypeFilter) {
+        return false
+      }
+
+      // Filter by formula changes
+      if (formulaChangeFilter !== 'all') {
+        const hasFormulaChange = hasFormulaChanges(cell)
+        if (formulaChangeFilter === 'formula-changed' && !hasFormulaChange) {
+          return false
+        }
+        if (formulaChangeFilter === 'formula-unchanged' && hasFormulaChange) {
+          return false
+        }
+      }
+
+      // Filter by search term
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase()
+        const addressMatch = cell.address.toLowerCase().includes(searchLower)
+        const oldValueMatch = String(cell.oldValue || '').toLowerCase().includes(searchLower)
+        const newValueMatch = String(cell.newValue || '').toLowerCase().includes(searchLower)
+        const oldFormulaMatch = (cell.oldFormula || '').toLowerCase().includes(searchLower)
+        const newFormulaMatch = (cell.newFormula || '').toLowerCase().includes(searchLower)
+        
+        if (!addressMatch && !oldValueMatch && !newValueMatch && !oldFormulaMatch && !newFormulaMatch) {
+          return false
+        }
+      }
+
       return true
     })
-  }, [allCells, selectedSheet, changeTypeFilter, formulaChangeFilter, searchTerm])
+  }, [allCells, changeTypeFilter, formulaChangeFilter, searchTerm])
 
-  // Sort filtered cells
+  // Apply sorting
   const sortedCells = useMemo(() => {
+    if (!filteredCells.length) return []
+
     return [...filteredCells].sort((a, b) => {
       let aValue: any
       let bValue: any
-      
+
       switch (sortField) {
         case 'address':
           aValue = a.address
@@ -91,33 +182,25 @@ export default function ComparisonResults({ result, onReset }: ComparisonResults
           bValue = b.col
           break
         case 'oldValue':
-          aValue = a.oldValue
-          bValue = b.oldValue
+          aValue = String(a.oldValue || '')
+          bValue = String(b.oldValue || '')
           break
         case 'newValue':
-          aValue = a.newValue
-          bValue = b.newValue
-          break
-        case 'oldFormula':
-          aValue = a.oldFormula || ''
-          bValue = b.oldFormula || ''
-          break
-        case 'newFormula':
-          aValue = a.newFormula || ''
-          bValue = b.newFormula || ''
+          aValue = String(a.newValue || '')
+          bValue = String(b.newValue || '')
           break
         default:
           aValue = a.address
           bValue = b.address
       }
-      
+
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
   }, [filteredCells, sortField, sortDirection])
 
-  const handleSort = (field: string) => {
+  const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
@@ -126,350 +209,408 @@ export default function ComparisonResults({ result, onReset }: ComparisonResults
     }
   }
 
-  const getSortIcon = (field: string) => {
+  const getSortIcon = (field: SortField) => {
     if (sortField !== field) return '↕️'
     return sortDirection === 'asc' ? '↑' : '↓'
   }
 
-  const hasFormulaChanges = (cell: CellDiff) => {
-    if (cell.type === 'added') {
-      return !!cell.newFormula
+  const getCellClass = (cell: CellDiff) => {
+    switch (cell.type) {
+      case 'added':
+        return 'diff-cell-added'
+      case 'removed':
+        return 'diff-cell-removed'
+      case 'changed':
+        return 'diff-cell-changed'
+      default:
+        return ''
     }
-    if (cell.type === 'removed') {
-      return !!cell.oldFormula
-    }
-    if (cell.type === 'changed') {
-      return cell.oldFormula !== cell.newFormula
-    }
-    return false
   }
 
-  const getFormulaChangeType = (cell: CellDiff) => {
-    if (!hasFormulaChanges(cell)) return 'none'
-    if (cell.type === 'added') return 'formula-added'
-    if (cell.type === 'removed') return 'formula-removed'
-    if (cell.type === 'changed') {
-      const oldFormula = cell.oldFormula || ''
-      const newFormula = cell.newFormula || ''
-      if (oldFormula && newFormula) {
-        if (oldFormula.includes('=') && newFormula.includes('=')) {
-          const oldRefs = oldFormula.match(/[A-Z]+\d+/g) || []
-          const newRefs = newFormula.match(/[A-Z]+\d+/g) || []
-          if (JSON.stringify(oldRefs.sort()) !== JSON.stringify(newRefs.sort())) {
-            return 'reference-changed'
-          }
-          const oldFuncs = oldFormula.match(/[A-Z]+\(/g) || []
-          const newFuncs = newFormula.match(/[A-Z]+\(/g) || []
-          if (JSON.stringify(oldFuncs.sort()) !== JSON.stringify(newFuncs.sort())) {
-            return 'function-changed'
-          }
-          return 'formula-modified'
+  const formatCellValue = (value: string | number | boolean | null) => {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
+    return String(value)
+  }
+
+  const getColumnLetter = (colIndex: number) => {
+    let result = ''
+    while (colIndex >= 0) {
+      result = String.fromCharCode(65 + (colIndex % 26)) + result
+      colIndex = Math.floor(colIndex / 26) - 1
+    }
+    return result
+  }
+
+  // Calculate enhanced formula change statistics
+  const formulaStats = useMemo(() => {
+    if (!allCells.length) return { 
+      total: 0, 
+      changed: 0, 
+      added: 0, 
+      removed: 0,
+      referenceChanged: 0,
+      functionChanged: 0,
+      valueImpact: { increased: 0, decreased: 0, noChange: 0 }
+    }
+    
+    let total = 0
+    let changed = 0
+    let added = 0
+    let removed = 0
+    let referenceChanged = 0
+    let functionChanged = 0
+    const valueImpact = { increased: 0, decreased: 0, noChange: 0 }
+    
+    allCells.forEach(cell => {
+      if (cell.oldFormula || cell.newFormula) {
+        total++
+        const changeType = getFormulaChangeType(cell)
+        const impact = getValueImpact(cell)
+        
+        if (cell.type === 'added' && cell.newFormula) added++
+        else if (cell.type === 'removed' && cell.oldFormula) removed++
+        else if (cell.type === 'changed' && changeType !== 'none') {
+          changed++
+          if (changeType === 'reference-changed') referenceChanged++
+          if (changeType === 'function-changed') functionChanged++
+        }
+        
+        if (impact) {
+          if (impact === 'increased') valueImpact.increased++
+          else if (impact === 'decreased') valueImpact.decreased++
+          else if (impact === 'no-change') valueImpact.noChange++
         }
       }
-      return 'formula-changed'
+    })
+    
+    return { 
+      total, 
+      changed, 
+      added, 
+      removed, 
+      referenceChanged, 
+      functionChanged, 
+      valueImpact 
     }
-    return 'none'
-  }
-
-  const getValueImpact = (cell: CellDiff) => {
-    if (cell.type !== 'changed' || !cell.oldFormula || !cell.newFormula) return null
-    const oldValue = cell.oldValue
-    const newValue = cell.newValue
-    if (oldValue === null || newValue === null) return null
-    if (typeof oldValue === 'number' && typeof newValue === 'number') {
-      if (oldValue === 0) return newValue === 0 ? 'no-change' : 'infinite-change'
-      const percentChange = ((newValue - oldValue) / Math.abs(oldValue)) * 100
-      if (Math.abs(percentChange) < 0.01) return 'minimal-change'
-      if (percentChange > 0) return 'increased'
-      if (percentChange < 0) return 'decreased'
-    }
-    if (oldValue !== newValue) return 'value-changed'
-    return 'no-change'
-  }
-
-  const getValueImpactIcon = (impact: string | null) => {
-    if (!impact) return ''
-    switch (impact) {
-      case 'increased': return '📈'
-      case 'decreased': return '📉'
-      case 'no-change': return '➡️'
-      case 'minimal-change': return '➡️'
-      case 'value-changed': return '🔄'
-      case 'infinite-change': return '∞'
-      default: return ''
-    }
-  }
-
-  const getFormulaChangeIcon = (type: string) => {
-    switch (type) {
-      case 'formula-added': return '➕'
-      case 'formula-removed': return '➖'
-      case 'reference-changed': return '🔗'
-      case 'function-changed': return '⚙️'
-      case 'formula-modified': return '✏️'
-      case 'formula-changed': return '🔄'
-      default: return ''
-    }
-  }
+  }, [allCells])
 
   return (
-    <div className="max-w-7xl mx-auto p-6 bg-white rounded-lg shadow-md">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Comparison Results</h2>
-        {onReset && (
-          <button
-            onClick={onReset}
-            className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
-          >
-            Compare Different Files
-          </button>
-        )}
-      </div>
+    <div className="space-y-6">
+      {/* Summary */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Comparison Results</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{result.summary.added}</div>
+            <div className="text-sm text-gray-600">Added</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-red-600">{result.summary.removed}</div>
+            <div className="text-sm text-gray-600">Removed</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-yellow-600">{result.summary.changed}</div>
+            <div className="text-sm text-gray-600">Changed</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-gray-600">{result.totalChanges}</div>
+            <div className="text-sm text-gray-600">Total Changes</div>
+          </div>
+        </div>
 
-      <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-        <h3 className="font-semibold text-blue-800 mb-2">Summary</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="font-medium">File 1:</span> {result.file1Name}
-          </div>
-          <div>
-            <span className="font-medium">File 2:</span> {result.file2Name}
-          </div>
-          <div>
-            <span className="font-medium">Total Changes:</span> {result.totalChanges}
-          </div>
-          <div>
-            <span className="font-medium">Compared:</span> {new Date(result.comparedAt).toLocaleString()}
-          </div>
+        <div className="text-sm text-gray-600">
+          <p><strong>File 1:</strong> {result.file1Name}</p>
+          <p><strong>File 2:</strong> {result.file2Name}</p>
+          <p><strong>Compared:</strong> {new Date(result.comparedAt).toLocaleString()}</p>
         </div>
       </div>
 
-      {/* Formula Changes Analysis */}
-      <div className="mb-6 p-4 bg-green-50 rounded-lg">
-        <h3 className="font-semibold text-green-800 mb-2">Formula Changes Analysis</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="font-medium">Formula Added:</span> {allCells.filter(cell => getFormulaChangeType(cell) === 'formula-added').length}
-          </div>
-          <div>
-            <span className="font-medium">Formula Removed:</span> {allCells.filter(cell => getFormulaChangeType(cell) === 'formula-removed').length}
-          </div>
-          <div>
-            <span className="font-medium">Reference Changes:</span> {allCells.filter(cell => getFormulaChangeType(cell) === 'reference-changed').length}
-          </div>
-          <div>
-            <span className="font-medium">Function Changes:</span> {allCells.filter(cell => getFormulaChangeType(cell) === 'function-changed').length}
-          </div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 min-w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sheet</label>
-            <select
-              value={selectedSheet}
-              onChange={(e) => setSelectedSheet(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Sheets</option>
-              {result.sheets.map(sheet => (
-                <option key={sheet.sheetName} value={sheet.sheetName}>
-                  {sheet.sheetName}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex-1 min-w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Change Type</label>
-            <select
-              value={changeTypeFilter}
-              onChange={(e) => setChangeTypeFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Changes</option>
-              <option value="added">Added</option>
-              <option value="removed">Removed</option>
-              <option value="changed">Changed</option>
-            </select>
-          </div>
-
-          <div className="flex-1 min-w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Formula Changes</label>
-            <select
-              value={formulaChangeFilter}
-              onChange={(e) => setFormulaChangeFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All</option>
-              <option value="none">No Formula Changes</option>
-              <option value="formula-added">Formula Added</option>
-              <option value="formula-removed">Formula Removed</option>
-              <option value="reference-changed">Reference Changed</option>
-              <option value="function-changed">Function Changed</option>
-              <option value="formula-modified">Formula Modified</option>
-              <option value="formula-changed">Formula Changed</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex-1 min-w-48">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-          <input
-            type="text"
-            placeholder="Search by address, value, or formula..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div className="flex items-center space-x-4">
-          <label className="flex items-center">
+      {/* Sheet Selection */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Sheet Comparison</h3>
+          <label className="flex items-center space-x-2">
             <input
               type="checkbox"
               checked={showFormulas}
               onChange={(e) => setShowFormulas(e.target.checked)}
-              className="mr-2"
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-700">Show Formulas</span>
+            <span className="text-sm text-gray-600">Show Formulas</span>
           </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {result.sheets.map((sheet) => (
+            <button
+              key={sheet.sheetName}
+              onClick={() => setSelectedSheet(sheet.sheetName)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedSheet === sheet.sheetName
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {sheet.sheetName}
+              <span className="ml-2 px-2 py-1 bg-gray-200 text-gray-700 rounded-full text-xs">
+                {sheet.totalChanges}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Results Table */}
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white border border-gray-200">
-          <thead>
-            <tr className="bg-gray-50">
-              <th 
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('address')}
-              >
-                Cell {getSortIcon('address')}
-              </th>
-              <th 
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('type')}
-              >
-                Type {getSortIcon('type')}
-              </th>
-              <th 
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('row')}
-              >
-                Row {getSortIcon('row')}
-              </th>
-              <th 
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('col')}
-              >
-                Col {getSortIcon('col')}
-              </th>
-              <th 
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('oldValue')}
-              >
-                Old Value {getSortIcon('oldValue')}
-              </th>
-              <th 
-                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('newValue')}
-              >
-                New Value {getSortIcon('newValue')}
-              </th>
-              {showFormulas && (
-                <>
-                  <th 
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('oldFormula')}
-                  >
-                    Old Formula {getSortIcon('oldFormula')}
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('newFormula')}
-                  >
-                    New Formula {getSortIcon('newFormula')}
-                  </th>
-                </>
-              )}
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Formula Changes
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Value Impact
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {sortedCells.map((cell, index) => (
-              <tr key={`${cell.sheetName}-${cell.address}-${index}`} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm font-mono text-gray-900">
-                  {cell.address}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    cell.type === 'added' ? 'bg-green-100 text-green-800' :
-                    cell.type === 'removed' ? 'bg-red-100 text-red-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {cell.type}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">{cell.row}</td>
-                <td className="px-4 py-3 text-sm text-gray-900">{cell.col}</td>
-                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate">
-                  {cell.oldValue !== null ? String(cell.oldValue) : '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate">
-                  {cell.newValue !== null ? String(cell.newValue) : '-'}
-                </td>
-                {showFormulas && (
-                  <>
-                    <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate font-mono">
-                      {cell.oldFormula || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate font-mono">
-                      {cell.newFormula || '-'}
-                    </td>
-                  </>
+      {/* Sheet Details */}
+      {selectedSheetData && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <h4 className="text-lg font-semibold text-gray-900">
+              {selectedSheet} - {selectedSheetData.totalChanges} changes
+            </h4>
+            
+            {/* Enhanced Formula Statistics */}
+            {showFormulas && formulaStats.total > 0 && (
+              <div className="mt-3 p-4 bg-blue-50 rounded-lg">
+                <h5 className="text-sm font-medium text-blue-900 mb-3">Formula Changes Analysis</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-blue-800">
+                  <div>
+                    <div className="font-semibold">Total Formulas</div>
+                    <div className="text-lg">{formulaStats.total}</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">Changed</div>
+                    <div className="text-lg">{formulaStats.changed}</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">Added</div>
+                    <div className="text-lg">{formulaStats.added}</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold">Removed</div>
+                    <div className="text-lg">{formulaStats.removed}</div>
+                  </div>
+                </div>
+                
+                {formulaStats.referenceChanged > 0 || formulaStats.functionChanged > 0 && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="text-xs font-medium text-blue-700 mb-2">Change Types:</div>
+                    <div className="flex space-x-4 text-xs text-blue-600">
+                      {formulaStats.referenceChanged > 0 && (
+                        <span>🔗 References: {formulaStats.referenceChanged}</span>
+                      )}
+                      {formulaStats.functionChanged > 0 && (
+                        <span>⚙️ Functions: {formulaStats.functionChanged}</span>
+                      )}
+                    </div>
+                  </div>
                 )}
-                <td className="px-4 py-3 text-sm">
-                  {(() => {
-                    const formulaChangeType = getFormulaChangeType(cell)
-                    if (formulaChangeType === 'none') return '-'
-                    return (
-                      <span className="inline-flex items-center space-x-1">
-                        <span>{getFormulaChangeIcon(formulaChangeType)}</span>
-                        <span className="text-xs">{formulaChangeType.replace('-', ' ')}</span>
-                      </span>
-                    )
-                  })()}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  {(() => {
-                    const impact = getValueImpact(cell)
-                    if (!impact) return '-'
-                    return (
-                      <span className="inline-flex items-center space-x-1">
-                        <span>{getValueImpactIcon(impact)}</span>
-                        <span className="text-xs">{impact.replace('-', ' ')}</span>
-                      </span>
-                    )
-                  })()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                
+                {formulaStats.valueImpact.increased > 0 || formulaStats.valueImpact.decreased > 0 && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="text-xs font-medium text-blue-700 mb-2">Value Impact:</div>
+                    <div className="flex space-x-4 text-xs text-blue-600">
+                      {formulaStats.valueImpact.increased > 0 && (
+                        <span>📈 Increased: {formulaStats.valueImpact.increased}</span>
+                      )}
+                      {formulaStats.valueImpact.decreased > 0 && (
+                        <span>📉 Decreased: {formulaStats.valueImpact.decreased}</span>
+                      )}
+                      {formulaStats.valueImpact.noChange > 0 && (
+                        <span>➡️ No Change: {formulaStats.valueImpact.noChange}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-      {sortedCells.length === 0 && (
-        <div className="text-center py-8 text-gray-500">
-          No changes found matching the current filters.
+          {/* Filters and Search */}
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 space-y-4">
+            <div className="flex flex-wrap gap-4 items-center">
+              {/* Change Type Filter */}
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Change Type:</label>
+                <select
+                  value={changeTypeFilter}
+                  onChange={(e) => setChangeTypeFilter(e.target.value as ChangeType)}
+                  className="filter-control"
+                >
+                  <option value="all">All Changes</option>
+                  <option value="added">Added Only</option>
+                  <option value="removed">Removed Only</option>
+                  <option value="changed">Changed Only</option>
+                </select>
+              </div>
+
+              {/* Formula Change Filter */}
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Formula Changes:</label>
+                <select
+                  value={formulaChangeFilter}
+                  onChange={(e) => setFormulaChangeFilter(e.target.value as any)}
+                  className="filter-control"
+                >
+                  <option value="all">All Changes</option>
+                  <option value="formula-changed">Formula Changed</option>
+                  <option value="formula-unchanged">Formula Unchanged</option>
+                </select>
+              </div>
+
+              {/* Search */}
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Search:</label>
+                <input
+                  type="text"
+                  placeholder="Search cells, values, formulas..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input w-64"
+                />
+              </div>
+
+              {/* Results Count */}
+              <div className="text-sm text-gray-600">
+                Showing {filteredCells.length} of {allCells.length} changes
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  {[
+                    { field: 'address', label: 'Cell' },
+                    { field: 'type', label: 'Type' },
+                    { field: 'row', label: 'Row' },
+                    { field: 'col', label: 'Col' },
+                    { field: 'oldValue', label: 'Old Value' },
+                    { field: 'newValue', label: 'New Value' },
+                    ...(showFormulas ? [
+                      { field: 'oldFormula', label: 'Old Formula' },
+                      { field: 'newFormula', label: 'New Formula' }
+                    ] : [])
+                  ].map(({ field, label }) => (
+                    <th 
+                      key={field}
+                      className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header"
+                      onClick={() => handleSort(field as SortField)}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>{label}</span>
+                        <span className="text-gray-400">{getSortIcon(field as SortField)}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {sortedCells.map((cell, index) => {
+                  const formulaChangeType = getFormulaChangeType(cell)
+                  const valueImpact = getValueImpact(cell)
+                  
+                  return (
+                    <tr key={`${cell.address}-${index}`} className={`${getCellClass(cell)} hover:bg-gray-50`}>
+                      <td className="px-3 py-2 text-sm font-mono text-gray-900">
+                        {cell.address}
+                      </td>
+                      <td className="px-3 py-2 text-sm">
+                        <div className="space-y-1">
+                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                            cell.type === 'added' ? 'bg-green-100 text-green-800' :
+                            cell.type === 'removed' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {cell.type}
+                          </span>
+                          {formulaChangeType !== 'none' && (
+                            <div className="text-xs text-gray-600">
+                              {formulaChangeType === 'reference-changed' && '🔗 Ref Changed'}
+                              {formulaChangeType === 'function-changed' && '⚙️ Func Changed'}
+                              {formulaChangeType === 'formula-modified' && '📝 Modified'}
+                              {formulaChangeType === 'formula-added' && '➕ Added'}
+                              {formulaChangeType === 'formula-removed' && '➖ Removed'}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-900">
+                        {cell.row}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-900">
+                        {getColumnLetter(cell.col)}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-900">
+                        <div className="space-y-1">
+                          <div>{cell.type === 'removed' || cell.type === 'changed' 
+                            ? formatCellValue(cell.oldValue)
+                            : '-'
+                          }</div>
+                          {valueImpact && (
+                            <div className="text-xs text-gray-500">
+                              {valueImpact === 'increased' && '📈'}
+                              {valueImpact === 'decreased' && '📉'}
+                              {valueImpact === 'no-change' && '➡️'}
+                              {valueImpact === 'minimal-change' && '➡️'}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-900">
+                        <div className="space-y-1">
+                          <div>{cell.type === 'added' || cell.type === 'changed'
+                            ? formatCellValue(cell.newValue)
+                            : '-'
+                          }</div>
+                          {valueImpact && (
+                            <div className="text-xs text-gray-500">
+                              {valueImpact === 'increased' && '📈'}
+                              {valueImpact === 'decreased' && '📉'}
+                              {valueImpact === 'no-change' && '➡️'}
+                              {valueImpact === 'minimal-change' && '➡️'}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      {showFormulas && (
+                        <>
+                          <td className="px-3 py-2 text-sm font-mono text-gray-600">
+                            <div className="space-y-1">
+                              <div className="text-xs text-gray-500">Old:</div>
+                              <div className="bg-gray-100 p-1 rounded text-xs">
+                                {cell.oldFormula || '-'}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-sm font-mono text-gray-600">
+                            <div className="space-y-1">
+                              <div className="text-xs text-gray-500">New:</div>
+                              <div className="bg-gray-100 p-1 rounded text-xs">
+                                {cell.newFormula || '-'}
+                              </div>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {sortedCells.length === 0 && (
+            <div className="px-6 py-8 text-center text-gray-500">
+              {filteredCells.length === 0 && allCells.length > 0 ? (
+                <p>No changes match the current filters</p>
+              ) : (
+                <p>No changes found in this sheet</p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

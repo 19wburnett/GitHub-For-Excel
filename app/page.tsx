@@ -6,242 +6,80 @@ import ComparisonResults from './components/ComparisonResults'
 import { ExcelData, ComparisonResult } from './types'
 
 export default function Home() {
+  const [file1Data, setFile1Data] = useState<ExcelData | null>(null)
+  const [file2Data, setFile2Data] = useState<ExcelData | null>(null)
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null)
+  const [isComparing, setIsComparing] = useState(false)
 
-  const handleFilesProcessed = (file1: ExcelData, file2: ExcelData) => {
-    // Process comparison locally
-    const result = compareExcelFiles(file1, file2)
-    setComparisonResult(result)
+  const handleFile1Upload = (data: ExcelData) => {
+    setFile1Data(data)
   }
 
-  const compareExcelFiles = (file1: ExcelData, file2: ExcelData): ComparisonResult => {
-    const sheets: any[] = []
-    let totalAdded = 0
-    let totalRemoved = 0
-    let totalChanged = 0
+  const handleFile2Upload = (data: ExcelData) => {
+    setFile2Data(data)
+  }
 
-    // Get all unique sheet names
-    const allSheetNames = new Set([
-      ...file1.sheets.map(s => s.name),
-      ...file2.sheets.map(s => s.name)
-    ])
+  const handleCompare = async () => {
+    if (!file1Data || !file2Data) return
 
-    // Convert Set to Array for better compatibility
-    const sheetNamesArray = Array.from(allSheetNames)
+    setIsComparing(true)
+    try {
+      const response = await fetch('/api/compare', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file1: file1Data,
+          file2: file2Data,
+        }),
+      })
 
-    for (const sheetName of sheetNamesArray) {
-      const sheet1 = file1.sheets.find(s => s.name === sheetName)
-      const sheet2 = file2.sheets.find(s => s.name === sheetName)
-
-      const sheetDiff = compareSheet(sheet1, sheet2, sheetName)
-      sheets.push(sheetDiff)
-
-      totalAdded += sheetDiff.addedCells.length
-      totalRemoved += sheetDiff.removedCells.length
-      totalChanged += sheetDiff.changedCells.length
-    }
-
-    return {
-      file1Name: file1.fileName,
-      file2Name: file2.fileName,
-      comparedAt: new Date().toISOString(),
-      sheets,
-      totalChanges: totalAdded + totalRemoved + totalChanged,
-      summary: {
-        added: totalAdded,
-        removed: totalRemoved,
-        changed: totalChanged
+      if (response.ok) {
+        const result = await response.json()
+        setComparisonResult(result)
+      } else {
+        console.error('Comparison failed')
       }
+    } catch (error) {
+      console.error('Error comparing files:', error)
+    } finally {
+      setIsComparing(false)
     }
   }
 
-  const compareSheet = (sheet1: any, sheet2: any, sheetName: string): any => {
-    const addedCells: any[] = []
-    const removedCells: any[] = []
-    const changedCells: any[] = []
-
-    if (!sheet1 && !sheet2) {
-      return {
-        sheetName,
-        addedCells: [],
-        removedCells: [],
-        changedCells: [],
-        totalChanges: 0
-      }
-    }
-
-    if (!sheet1) {
-      // Sheet exists only in file2 (added)
-      if (sheet2) {
-        // Add all cells from sheet2 as added
-        for (let row = 0; row < sheet2.data.length; row++) {
-          for (let col = 0; col < sheet2.data[row].length; col++) {
-            const cell = sheet2.data[row][col]
-            if (cell.value !== null || cell.formula) {
-              addedCells.push({
-                address: cell.address,
-                row: cell.row,
-                col: cell.col,
-                oldValue: null,
-                newValue: cell.value,
-                oldFormula: undefined,
-                newFormula: cell.formula,
-                type: 'added'
-              })
-            }
-          }
-        }
-      }
-      return {
-        sheetName,
-        addedCells,
-        removedCells: [],
-        changedCells: [],
-        totalChanges: addedCells.length
-      }
-    }
-
-    if (!sheet2) {
-      // Sheet exists only in file1 (removed)
-      // Add all cells from sheet1 as removed
-      for (let row = 0; row < sheet1.data.length; row++) {
-        for (let col = 0; col < sheet1.data[row].length; col++) {
-          const cell = sheet1.data[row][col]
-          if (cell.value !== null || cell.formula) {
-            removedCells.push({
-              address: cell.address,
-              row: cell.row,
-              col: cell.col,
-              oldValue: cell.value,
-              newValue: null,
-              oldFormula: cell.formula,
-              newFormula: undefined,
-              type: 'removed'
-            })
-          }
-        }
-      }
-      return {
-        sheetName,
-        addedCells: [],
-        removedCells,
-        changedCells: [],
-        totalChanges: removedCells.length
-      }
-    }
-
-    // Both sheets exist, compare them cell by cell
-    const maxRow = Math.max(sheet1.maxRow, sheet2.maxRow)
-    const maxCol = Math.max(sheet1.maxCol, sheet2.maxCol)
-
-    for (let row = 0; row < maxRow; row++) {
-      for (let col = 0; col < maxCol; col++) {
-        const cell1 = sheet1.data[row]?.[col]
-        const cell2 = sheet2.data[row]?.[col]
-
-        if (!cell1 && !cell2) continue
-
-        if (!cell1) {
-          // Cell exists only in sheet2 (added)
-          if (cell2 && (cell2.value !== null || cell2.formula)) {
-            addedCells.push({
-              address: cell2.address,
-              row: cell2.row,
-              col: cell2.col,
-              oldValue: null,
-              newValue: cell2.value,
-              oldFormula: undefined,
-              newFormula: cell2.formula,
-              type: 'added'
-            })
-          }
-        } else if (!cell2) {
-          // Cell exists only in sheet1 (removed)
-          if (cell1.value !== null || cell1.formula) {
-            removedCells.push({
-              address: cell1.address,
-              row: cell1.row,
-              col: cell1.col,
-              oldValue: cell1.value,
-              newValue: null,
-              oldFormula: cell1.formula,
-              newFormula: undefined,
-              type: 'removed'
-            })
-          }
-        } else {
-          // Both cells exist, compare them
-          if (!isEqual(cell1.value, cell2.value) || !isEqual(cell1.formula, cell2.formula)) {
-            changedCells.push({
-              address: cell1.address,
-              row: cell1.row,
-              col: cell1.col,
-              oldValue: cell1.value,
-              newValue: cell2.value,
-              oldFormula: cell1.formula,
-              newFormula: cell2.formula,
-              type: 'changed'
-            })
-          }
-        }
-      }
-    }
-
-    return {
-      sheetName,
-      addedCells,
-      removedCells,
-      changedCells,
-      totalChanges: addedCells.length + removedCells.length + changedCells.length
-    }
-  }
-
-  const isEqual = (a: any, b: any): boolean => {
-    if (a === b) return true
-    if (a == null && b == null) return true
-    if (a == null || b == null) return false
-
-    // Handle date comparisons
-    if (a instanceof Date && b instanceof Date) {
-      return a.getTime() === b.getTime()
-    }
-
-    // Handle string comparisons (case-insensitive for Excel)
-    if (typeof a === 'string' && typeof b === 'string') {
-      const normalizeFormula = (formula: string) => {
-        return formula
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .toLowerCase() // Case insensitive
-          .trim()
-      }
-
-      // Check if both might be formulas (start with =)
-      if (a.startsWith('=') || b.startsWith('=')) {
-        return normalizeFormula(a) === normalizeFormula(b)
-      }
-
-      return a.toLowerCase() === b.toLowerCase()
-    }
-
-    return false
-  }
+  const canCompare = file1Data && file2Data
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto py-8">
-        <h1 className="text-4xl font-bold text-center text-gray-800 mb-8">
-          Excel Comparison Tool
-        </h1>
-        
-        {!comparisonResult ? (
-          <FileUpload onFilesProcessed={handleFilesProcessed} />
-        ) : (
-          <ComparisonResults 
-            result={comparisonResult} 
-            onReset={() => setComparisonResult(null)}
-          />
-        )}
+    <main className="space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <FileUpload
+          label="File 1 (Original)"
+          onFileUpload={handleFile1Upload}
+          fileData={file1Data}
+        />
+        <FileUpload
+          label="File 2 (Modified)"
+          onFileUpload={handleFile2Upload}
+          fileData={file2Data}
+        />
       </div>
-    </div>
+
+      {canCompare && (
+        <div className="text-center">
+          <button
+            onClick={handleCompare}
+            disabled={isComparing}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
+          >
+            {isComparing ? 'Comparing...' : 'Compare Files'}
+          </button>
+        </div>
+      )}
+
+      {comparisonResult && (
+        <ComparisonResults result={comparisonResult} />
+      )}
+    </main>
   )
 }
