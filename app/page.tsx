@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import FileUpload from './components/FileUpload'
 import ComparisonResults from './components/ComparisonResults'
-import { ExcelData, ComparisonResult } from './types'
+import { ExcelData, ComparisonResult, UploadResponse } from './types'
 
 export default function Home() {
   const [file1Data, setFile1Data] = useState<ExcelData | null>(null)
@@ -13,22 +13,37 @@ export default function Home() {
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null)
   const [isComparing, setIsComparing] = useState(false)
 
-  const handleFile1Upload = (data: ExcelData) => {
-    setFile1Data(data)
+  const handleFile1Upload = (uploadResponse: UploadResponse) => {
+    // Store the upload response (contains fileId, fileName, sheetCount)
+    setFile1Id(uploadResponse.fileId)
+    // We'll need to fetch the actual file data later for comparison
   }
 
-  const handleFile2Upload = (data: ExcelData) => {
-    setFile2Data(data)
+  const handleFile2Upload = (uploadResponse: UploadResponse) => {
+    // Store the upload response (contains fileId, fileName, sheetCount)
+    setFile2Id(uploadResponse.fileId)
+    // We'll need to fetch the actual file data later for comparison
   }
 
-  const handleFile1UploadSuccess = (uploadResult: any) => {
+  const handleFile1UploadSuccess = (uploadResult: UploadResponse) => {
     setFile1Id(uploadResult.fileId)
-    setFile1Data(uploadResult)
+    // Fetch the actual file data for comparison
+    fetchFileData(uploadResult.fileId).then(setFile1Data)
   }
 
-  const handleFile2UploadSuccess = (uploadResult: any) => {
+  const handleFile2UploadSuccess = (uploadResult: UploadResponse) => {
     setFile2Id(uploadResult.fileId)
-    setFile2Data(uploadResult)
+    // Fetch the actual file data for comparison
+    fetchFileData(uploadResult.fileId).then(setFile2Data)
+  }
+
+  // Function to fetch file data by ID
+  const fetchFileData = async (fileId: string): Promise<ExcelData> => {
+    const response = await fetch(`/api/upload?fileId=${fileId}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch file data')
+    }
+    return response.json()
   }
 
   const handleCompare = async () => {
@@ -83,13 +98,13 @@ export default function Home() {
         <FileUpload
           label="File 1 (Original)"
           onFileUpload={handleFile1Upload}
-          fileData={file1Data}
+          fileData={file1Id ? { fileId: file1Id, fileName: file1Data?.fileName || 'File 1', sheetCount: file1Data?.sheets?.length || 0, message: 'File uploaded' } : null}
           onUploadSuccess={handleFile1UploadSuccess}
         />
         <FileUpload
           label="File 2 (Modified)"
           onFileUpload={handleFile2Upload}
-          fileData={file2Data}
+          fileData={file2Id ? { fileId: file2Id, fileName: file2Data?.fileName || 'File 2', sheetCount: file2Data?.sheets?.length || 0, message: 'File uploaded' } : null}
           onUploadSuccess={handleFile2UploadSuccess}
         />
       </div>

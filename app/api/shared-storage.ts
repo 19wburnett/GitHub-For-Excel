@@ -16,5 +16,10 @@ export function cleanupOldFiles() {
   }
 }
 
-// Run cleanup every 30 minutes
-setInterval(cleanupOldFiles, 30 * 60 * 1000)
+// Debug function to log storage state
+export function logStorageState() {
+  console.log(`Storage has ${fileStorage.size} files:`)
+  for (const [fileId, fileData] of fileStorage.entries()) {
+    console.log(`- ${fileId}: ${fileData.fileName} (${fileData.sheets.length} sheets)`)
+  }
+}

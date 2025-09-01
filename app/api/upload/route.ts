@@ -139,6 +139,10 @@ export async function POST(request: NextRequest) {
     // Generate unique ID and store the data
     const fileId = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     fileStorage.set(fileId, excelData)
+    
+    console.log(`File stored with ID: ${fileId}`)
+    console.log(`Storage now has ${fileStorage.size} files`)
+    logStorageState()
 
     // Return file ID instead of full data
     return NextResponse.json({
