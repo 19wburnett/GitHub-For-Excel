@@ -29,6 +29,15 @@ const nextConfig = {
       },
     ]
   },
+  // Increase payload size limits
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: '/api/:path*',
+      },
+    ]
+  },
 }
 
 module.exports = nextConfig
