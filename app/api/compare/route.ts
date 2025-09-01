@@ -15,47 +15,37 @@ export async function OPTIONS(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Check content length to prevent memory issues
-    const contentLength = request.headers.get('content-length')
-    console.log('Request content length:', contentLength)
-    
-    // Increase the limit to 50MB to match Vercel config
-    if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) { // 50MB limit
-      console.log('File size too large:', parseInt(contentLength))
-      return NextResponse.json(
-        { error: 'File size too large. Please upload files smaller than 50MB.' },
-        { status: 413 }
-      )
-    }
-
     console.log('Parsing request body...')
     const body = await request.json()
     console.log('Request body parsed successfully')
     
-    const { file1, file2 } = body
+    const { file1Id, file2Id } = body
 
-    if (!file1 || !file2) {
-      console.log('Missing file data:', { hasFile1: !!file1, hasFile2: !!file2 })
+    if (!file1Id || !file2Id) {
+      console.log('Missing file IDs:', { hasFile1Id: !!file1Id, hasFile2Id: !!file2Id })
       return NextResponse.json(
-        { error: 'Both files are required for comparison' },
+        { error: 'Both file IDs are required for comparison' },
         { status: 400 }
       )
     }
 
-    // Validate file structure
-    if (!file1.sheets || !Array.isArray(file1.sheets)) {
-      console.log('Invalid file1 structure:', file1)
+    // Retrieve files from storage using IDs
+    const file1 = fileStorage.get(file1Id)
+    const file2 = fileStorage.get(file2Id)
+
+    if (!file1) {
+      console.log('File1 not found:', file1Id)
       return NextResponse.json(
-        { error: 'Invalid file1 structure' },
-        { status: 400 }
+        { error: 'File 1 not found. Please upload it again.' },
+        { status: 404 }
       )
     }
 
-    if (!file2.sheets || !Array.isArray(file2.sheets)) {
-      console.log('Invalid file2 structure:', file2)
+    if (!file2) {
+      console.log('File2 not found:', file2Id)
       return NextResponse.json(
-        { error: 'Invalid file2 structure' },
-        { status: 400 }
+        { error: 'File 2 not found. Please upload it again.' },
+        { status: 404 }
       )
     }
 
