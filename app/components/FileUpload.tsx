@@ -1,16 +1,15 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { ExcelData, UploadResponse } from '../types'
+import { ExcelData } from '../types'
 
 interface FileUploadProps {
   label: string
-  onFileUpload: (data: UploadResponse) => void
-  onUploadSuccess?: (uploadResult: UploadResponse) => void
-  fileData: UploadResponse | null
+  onFileUpload: (data: ExcelData) => void
+  fileData: ExcelData | null
 }
 
-export default function FileUpload({ label, onFileUpload, fileData, onUploadSuccess }: FileUploadProps) {
+export default function FileUpload({ label, onFileUpload, fileData }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,12 +62,7 @@ export default function FileUpload({ label, onFileUpload, fileData, onUploadSucc
 
       if (response.ok) {
         const data = await response.json()
-        // The upload response now contains fileId, fileName, sheetCount, etc.
         onFileUpload(data)
-        // Call onUploadSuccess if provided
-        if (onUploadSuccess) {
-          onUploadSuccess(data)
-        }
       } else {
         const errorData = await response.json()
         setError(errorData.error || 'Upload failed')
@@ -85,7 +79,7 @@ export default function FileUpload({ label, onFileUpload, fileData, onUploadSucc
   }
 
   const removeFile = () => {
-    onFileUpload({} as UploadResponse)
+    onFileUpload({} as ExcelData)
   }
 
   return (
@@ -135,8 +129,8 @@ export default function FileUpload({ label, onFileUpload, fileData, onUploadSucc
               <div>
                 <p className="font-medium text-gray-900">{fileData.fileName}</p>
                 <p className="text-sm text-gray-500">
-                  {fileData.sheetCount} sheet{fileData.sheetCount !== 1 ? 's' : ''} • 
-                  File ID: {fileData.fileId?.substring(0, 8)}...
+                  {fileData.sheets.length} sheet{fileData.sheets.length !== 1 ? 's' : ''} • 
+                  {new Date(fileData.uploadedAt).toLocaleString()}
                 </p>
               </div>
             </div>

@@ -29,7 +29,7 @@ const nextConfig = {
       },
     ]
   },
-  // Increase payload size limits and optimize for large files
+  // Increase payload size limits
   async rewrites() {
     return [
       {
@@ -38,9 +38,6 @@ const nextConfig = {
       },
     ]
   },
-  // Optimize for large payloads
-  compress: true,
-  poweredByHeader: false,
 }
 
 module.exports = nextConfig

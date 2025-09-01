@@ -19,14 +19,6 @@ export interface ExcelData {
   uploadedAt: string
 }
 
-// New type for upload response
-export interface UploadResponse {
-  fileId: string
-  fileName: string
-  sheetCount: number
-  message: string
-}
-
 export interface CellDiff {
   address: string
   row: number

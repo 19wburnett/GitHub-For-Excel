@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ExcelData, ComparisonResult, SheetDiff, CellDiff, SheetData } from '../../types'
-import { fileStorage } from '../shared-storage'
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
@@ -15,79 +14,19 @@ export async function OPTIONS(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('Parsing request body...')
-    const body = await request.json()
-    console.log('Request body parsed successfully')
-    
-    const { file1Id, file2Id } = body
+    const { file1, file2 } = await request.json()
 
-    if (!file1Id || !file2Id) {
-      console.log('Missing file IDs:', { hasFile1Id: !!file1Id, hasFile2Id: !!file2Id })
-      return NextResponse.json(
-        { error: 'Both file IDs are required for comparison' },
-        { status: 400 }
-      )
+    if (!file1 || !file2) {
+      return NextResponse.json({ error: 'Both files are required' }, { status: 400 })
     }
-
-    // Retrieve files from storage using IDs
-    const file1 = fileStorage.get(file1Id)
-    const file2 = fileStorage.get(file2Id)
-
-    if (!file1) {
-      console.log('File1 not found:', file1Id)
-      return NextResponse.json(
-        { error: 'File 1 not found. Please upload it again.' },
-        { status: 404 }
-      )
-    }
-
-    if (!file2) {
-      console.log('File2 not found:', file2Id)
-      return NextResponse.json(
-        { error: 'File 2 not found. Please upload it again.' },
-        { status: 404 }
-      )
-    }
-
-    console.log('Starting comparison...')
-    console.log(`File 1: ${file1.fileName}, Sheets: ${file1.sheets.length}`)
-    console.log(`File 2: ${file2.fileName}, Sheets: ${file2.sheets.length}`)
-    
-    // Log sheet sizes to identify potential memory issues
-    file1.sheets.forEach((sheet: any, index: number) => {
-      console.log(`File1 Sheet ${index}: ${sheet.name}, Rows: ${sheet.maxRow}, Cols: ${sheet.maxCol}`)
-    })
-    
-    file2.sheets.forEach((sheet: any, index: number) => {
-      console.log(`File2 Sheet ${index}: ${sheet.name}, Rows: ${sheet.maxRow}, Cols: ${sheet.maxCol}`)
-    })
 
     const result = compareExcelFiles(file1, file2)
-    console.log('Comparison completed successfully')
-    console.log(`Total changes: ${result.totalChanges}`)
-
     return NextResponse.json(result)
 
   } catch (error) {
-    console.error('Comparison error:', error)
-    
-    // Provide more specific error information
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: 'Invalid JSON data received' },
-        { status: 400 }
-      )
-    }
-    
-    if (error instanceof Error) {
-      return NextResponse.json(
-        { error: `Comparison failed: ${error.message}` },
-        { status: 500 }
-      )
-    }
-    
+    console.error('Error comparing files:', error)
     return NextResponse.json(
-      { error: 'Failed to compare files. Please try again.' },
+      { error: 'Failed to compare files' },
       { status: 500 }
     )
   }
@@ -150,20 +89,18 @@ function compareSheet(sheet1: SheetData | undefined, sheet2: SheetData | undefin
   }
 
   if (!sheet1) {
-    // Sheet exists only in file2 (added)
+    // Sheet exists only in file2 - all cells are added
     if (sheet2) {
-      // Add all cells from sheet2 as added
-      for (let row = 0; row < sheet2.data.length; row++) {
-        for (let col = 0; col < sheet2.data[row].length; col++) {
-          const cell = sheet2.data[row][col]
-          if (cell.value !== null || cell.formula) {
+      for (let row = 0; row < sheet2.maxRow; row++) {
+        for (let col = 0; col < sheet2.maxCol; col++) {
+          const cell = sheet2.data[row]?.[col]
+          if (cell && (cell.value !== null || cell.formula)) {
             addedCells.push({
               address: cell.address,
               row: cell.row,
               col: cell.col,
               oldValue: null,
               newValue: cell.value,
-              oldFormula: undefined,
               newFormula: cell.formula,
               type: 'added'
             })
@@ -171,22 +108,12 @@ function compareSheet(sheet1: SheetData | undefined, sheet2: SheetData | undefin
         }
       }
     }
-    return {
-      sheetName,
-      addedCells,
-      removedCells: [],
-      changedCells: [],
-      totalChanges: addedCells.length
-    }
-  }
-
-  if (!sheet2) {
-    // Sheet exists only in file1 (removed)
-    // Add all cells from sheet1 as removed
-    for (let row = 0; row < sheet1.data.length; row++) {
-      for (let col = 0; col < sheet1.data[row].length; col++) {
-        const cell = sheet1.data[row][col]
-        if (cell.value !== null || cell.formula) {
+  } else if (!sheet2) {
+    // Sheet exists only in file1 - all cells are removed
+    for (let row = 0; row < sheet1.maxRow; row++) {
+      for (let col = 0; col < sheet1.maxCol; col++) {
+        const cell = sheet1.data[row]?.[col]
+        if (cell && (cell.value !== null || cell.formula)) {
           removedCells.push({
             address: cell.address,
             row: cell.row,
@@ -194,73 +121,62 @@ function compareSheet(sheet1: SheetData | undefined, sheet2: SheetData | undefin
             oldValue: cell.value,
             newValue: null,
             oldFormula: cell.formula,
-            newFormula: undefined,
             type: 'removed'
           })
         }
       }
     }
-    return {
-      sheetName,
-      addedCells: [],
-      removedCells,
-      changedCells: [],
-      totalChanges: removedCells.length
-    }
-  }
+  } else {
+    // Both sheets exist - compare cell by cell
+    const maxRows = Math.max(sheet1.maxRow, sheet2.maxRow)
+    const maxCols = Math.max(sheet1.maxCol, sheet2.maxCol)
 
-  // Both sheets exist, compare them cell by cell
-  const maxRow = Math.max(sheet1.maxRow, sheet2.maxRow)
-  const maxCol = Math.max(sheet1.maxCol, sheet2.maxCol)
+    for (let row = 0; row < maxRows; row++) {
+      for (let col = 0; col < maxCols; col++) {
+        const cell1 = sheet1.data[row]?.[col]
+        const cell2 = sheet2.data[row]?.[col]
 
-  for (let row = 0; row < maxRow; row++) {
-    for (let col = 0; col < maxCol; col++) {
-      const cell1 = sheet1.data[row]?.[col]
-      const cell2 = sheet2.data[row]?.[col]
+        const address = getCellAddress(row, col)
 
-      if (!cell1 && !cell2) continue
-
-      if (!cell1) {
-        // Cell exists only in sheet2 (added)
-        if (cell2 && (cell2.value !== null || cell2.formula)) {
+        if (!cell1 && cell2 && (cell2.value !== null || cell2.formula)) {
+          // Cell exists only in file2
           addedCells.push({
-            address: cell2.address,
-            row: cell2.row,
-            col: cell2.col,
+            address,
+            row: row + 1,
+            col: col + 1,
             oldValue: null,
             newValue: cell2.value,
-            oldFormula: undefined,
             newFormula: cell2.formula,
             type: 'added'
           })
-        }
-      } else if (!cell2) {
-        // Cell exists only in sheet1 (removed)
-        if (cell1.value !== null || cell1.formula) {
+        } else if (cell1 && !cell2 && (cell1.value !== null || cell1.formula)) {
+          // Cell exists only in file1
           removedCells.push({
-            address: cell1.address,
-            row: cell1.row,
-            col: cell1.col,
+            address,
+            row: row + 1,
+            col: col + 1,
             oldValue: cell1.value,
             newValue: null,
             oldFormula: cell1.formula,
-            newFormula: undefined,
             type: 'removed'
           })
-        }
-      } else {
-        // Both cells exist, compare them
-        if (!isEqual(cell1.value, cell2.value) || !isEqual(cell1.formula, cell2.formula)) {
-          changedCells.push({
-            address: cell1.address,
-            row: cell1.row,
-            col: cell1.col,
-            oldValue: cell1.value,
-            newValue: cell2.value,
-            oldFormula: cell1.formula,
-            newFormula: cell2.formula,
-            type: 'changed'
-          })
+        } else if (cell1 && cell2) {
+          // Both cells exist - check for changes
+          const valueChanged = !isEqual(cell1.value, cell2.value)
+          const formulaChanged = !isEqual(cell1.formula, cell2.formula)
+
+          if (valueChanged || formulaChanged) {
+            changedCells.push({
+              address,
+              row: row + 1,
+              col: col + 1,
+              oldValue: cell1.value,
+              newValue: cell2.value,
+              oldFormula: cell1.formula,
+              newFormula: cell2.formula,
+              type: 'changed'
+            })
+          }
         }
       }
     }
@@ -273,6 +189,15 @@ function compareSheet(sheet1: SheetData | undefined, sheet2: SheetData | undefin
     changedCells,
     totalChanges: addedCells.length + removedCells.length + changedCells.length
   }
+}
+
+function getCellAddress(row: number, col: number): string {
+  let colStr = ''
+  while (col >= 0) {
+    colStr = String.fromCharCode(65 + (col % 26)) + colStr
+    col = Math.floor(col / 26) - 1
+  }
+  return `${colStr}${row + 1}`
 }
 
 function isEqual(a: any, b: any): boolean {
