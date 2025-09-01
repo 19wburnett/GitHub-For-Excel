@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ExcelData, ComparisonResult, SheetDiff, CellDiff } from '../../types'
+import { ExcelData, ComparisonResult, SheetDiff, CellDiff, SheetData } from '../../types'
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
