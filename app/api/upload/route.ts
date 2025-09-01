@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     // Upload file to Supabase Storage
     const fileBuffer = Buffer.from(await file.arrayBuffer())
     const filePath = `uploads/${Date.now()}-${file.name}`
+    console.log('Uploading file to Supabase:', filePath)
     const { data, error } = await supabase.storage
       .from('excel-files')
       .upload(filePath, fileBuffer, {
@@ -45,24 +46,21 @@ export async function POST(request: NextRequest) {
       })
 
     if (error) {
-      console.error('Supabase upload error:', error)
-      return NextResponse.json({ error: 'Failed to upload file to storage' }, { status: 500 })
+      console.error('Supabase upload error:', error.message, error)
+      return NextResponse.json({ error: 'Failed to upload file to storage: ' + error.message }, { status: 500 })
     }
 
     // Get public URL for the uploaded file
-    const { data: publicUrlData, error: urlError } = supabase.storage
+    console.log('Getting public URL for uploaded file')
+    const publicUrlData = supabase.storage
       .from('excel-files')
       .getPublicUrl(filePath)
 
-    if (urlError) {
-      console.error('Supabase URL retrieval error:', urlError)
-      return NextResponse.json({ error: 'Failed to retrieve file URL' }, { status: 500 })
-    }
-
+    console.log('File uploaded successfully:', publicUrlData.data.publicUrl)
     return NextResponse.json({
       fileId: filePath,
       fileName: file.name,
-      fileUrl: publicUrlData.publicUrl,
+      fileUrl: publicUrlData.data.publicUrl,
       uploadedAt: new Date().toISOString(),
     })
 
