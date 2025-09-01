@@ -25,5 +25,8 @@
         }
       ]
     }
-  ]
+  ],
+  "env": {
+    "VERCEL_FUNCTION_PAYLOAD_SIZE_LIMIT": "50mb"
+  }
 }

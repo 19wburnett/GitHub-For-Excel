@@ -16,19 +16,44 @@ export async function POST(request: NextRequest) {
   try {
     // Check content length to prevent memory issues
     const contentLength = request.headers.get('content-length')
+    console.log('Request content length:', contentLength)
+    
+    // Increase the limit to 50MB to match Vercel config
     if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) { // 50MB limit
+      console.log('File size too large:', parseInt(contentLength))
       return NextResponse.json(
         { error: 'File size too large. Please upload files smaller than 50MB.' },
         { status: 413 }
       )
     }
 
+    console.log('Parsing request body...')
     const body = await request.json()
+    console.log('Request body parsed successfully')
+    
     const { file1, file2 } = body
 
     if (!file1 || !file2) {
+      console.log('Missing file data:', { hasFile1: !!file1, hasFile2: !!file2 })
       return NextResponse.json(
         { error: 'Both files are required for comparison' },
+        { status: 400 }
+      )
+    }
+
+    // Validate file structure
+    if (!file1.sheets || !Array.isArray(file1.sheets)) {
+      console.log('Invalid file1 structure:', file1)
+      return NextResponse.json(
+        { error: 'Invalid file1 structure' },
+        { status: 400 }
+      )
+    }
+
+    if (!file2.sheets || !Array.isArray(file2.sheets)) {
+      console.log('Invalid file2 structure:', file2)
+      return NextResponse.json(
+        { error: 'Invalid file2 structure' },
         { status: 400 }
       )
     }
@@ -36,7 +61,7 @@ export async function POST(request: NextRequest) {
     console.log('Starting comparison...')
     console.log(`File 1: ${file1.fileName}, Sheets: ${file1.sheets.length}`)
     console.log(`File 2: ${file2.fileName}, Sheets: ${file2.sheets.length}`)
-
+    
     // Log sheet sizes to identify potential memory issues
     file1.sheets.forEach((sheet: any, index: number) => {
       console.log(`File1 Sheet ${index}: ${sheet.name}, Rows: ${sheet.maxRow}, Cols: ${sheet.maxCol}`)
@@ -54,6 +79,22 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Comparison error:', error)
+    
+    // Provide more specific error information
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: 'Invalid JSON data received' },
+        { status: 400 }
+      )
+    }
+    
+    if (error instanceof Error) {
+      return NextResponse.json(
+        { error: `Comparison failed: ${error.message}` },
+        { status: 500 }
+      )
+    }
+    
     return NextResponse.json(
       { error: 'Failed to compare files. Please try again.' },
       { status: 500 }
