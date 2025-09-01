@@ -24,6 +24,10 @@ export default function Home() {
 
     setIsComparing(true)
     try {
+      console.log('Starting comparison...')
+      console.log('File 1 data size:', JSON.stringify(file1Data).length)
+      console.log('File 2 data size:', JSON.stringify(file2Data).length)
+      
       const response = await fetch('/api/compare', {
         method: 'POST',
         headers: {
@@ -37,12 +41,23 @@ export default function Home() {
 
       if (response.ok) {
         const result = await response.json()
+        console.log('Comparison successful:', result)
         setComparisonResult(result)
       } else {
-        console.error('Comparison failed')
+        const errorText = await response.text()
+        console.error('Comparison failed:', response.status, errorText)
+        
+        // Try to parse as JSON for better error display
+        try {
+          const errorData = JSON.parse(errorText)
+          alert(`Comparison failed: ${errorData.error || 'Unknown error'}`)
+        } catch {
+          alert(`Comparison failed with status ${response.status}: ${errorText}`)
+        }
       }
     } catch (error) {
       console.error('Error comparing files:', error)
+      alert(`Error comparing files: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsComparing(false)
     }

@@ -37,6 +37,15 @@ export async function POST(request: NextRequest) {
     console.log(`File 1: ${file1.fileName}, Sheets: ${file1.sheets.length}`)
     console.log(`File 2: ${file2.fileName}, Sheets: ${file2.sheets.length}`)
 
+    // Log sheet sizes to identify potential memory issues
+    file1.sheets.forEach((sheet: any, index: number) => {
+      console.log(`File1 Sheet ${index}: ${sheet.name}, Rows: ${sheet.maxRow}, Cols: ${sheet.maxCol}`)
+    })
+    
+    file2.sheets.forEach((sheet: any, index: number) => {
+      console.log(`File2 Sheet ${index}: ${sheet.name}, Rows: ${sheet.maxRow}, Cols: ${sheet.maxCol}`)
+    })
+
     const result = compareExcelFiles(file1, file2)
     console.log('Comparison completed successfully')
     console.log(`Total changes: ${result.totalChanges}`)
