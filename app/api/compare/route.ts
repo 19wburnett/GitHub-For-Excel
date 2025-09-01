@@ -44,7 +44,10 @@ function compareExcelFiles(file1: ExcelData, file2: ExcelData): ComparisonResult
     ...file2.sheets.map(s => s.name)
   ])
 
-  for (const sheetName of allSheetNames) {
+  // Convert Set to Array for better compatibility
+  const sheetNamesArray = Array.from(allSheetNames)
+
+  for (const sheetName of sheetNamesArray) {
     const sheet1 = file1.sheets.find(s => s.name === sheetName)
     const sheet2 = file2.sheets.find(s => s.name === sheetName)
 
