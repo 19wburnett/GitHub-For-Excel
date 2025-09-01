@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ExcelData, ComparisonResult, SheetDiff, CellDiff, SheetData } from '../../types'
+import { createClient } from '@supabase/supabase-js'
+import * as XLSX from 'xlsx'
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
@@ -14,11 +21,37 @@ export async function OPTIONS(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { file1, file2 } = await request.json()
+    const { file1Id, file2Id } = await request.json()
 
-    if (!file1 || !file2) {
-      return NextResponse.json({ error: 'Both files are required' }, { status: 400 })
+    if (!file1Id || !file2Id) {
+      return NextResponse.json({ error: 'Both file IDs are required' }, { status: 400 })
     }
+
+    // Retrieve files from Supabase
+    const { data: file1Data, error: file1Error } = await supabase.storage
+      .from('excel-files')
+      .download(file1Id)
+
+    if (file1Error) {
+      console.error('Supabase download error for file1:', file1Error)
+      return NextResponse.json({ error: 'Failed to retrieve file 1 from storage' }, { status: 500 })
+    }
+
+    const { data: file2Data, error: file2Error } = await supabase.storage
+      .from('excel-files')
+      .download(file2Id)
+
+    if (file2Error) {
+      console.error('Supabase download error for file2:', file2Error)
+      return NextResponse.json({ error: 'Failed to retrieve file 2 from storage' }, { status: 500 })
+    }
+
+    // Process files
+    const file1Buffer = Buffer.from(await file1Data.arrayBuffer())
+    const file2Buffer = Buffer.from(await file2Data.arrayBuffer())
+
+    const file1 = parseExcelFile(file1Buffer, 'File 1')
+    const file2 = parseExcelFile(file2Buffer, 'File 2')
 
     const result = compareExcelFiles(file1, file2)
     return NextResponse.json(result)
@@ -29,6 +62,86 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to compare files' },
       { status: 500 }
     )
+  }
+}
+
+function parseExcelFile(buffer: Buffer, fileName: string): ExcelData {
+  const workbook = XLSX.read(buffer, { 
+    type: 'buffer',
+    cellFormula: true,
+    cellDates: true,
+    cellNF: false,
+    cellStyles: false
+  })
+
+  const sheets: SheetData[] = []
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName]
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+      header: 1,
+      defval: null,
+      raw: false
+    })
+
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1')
+    const maxRow = range.e.r
+    const maxCol = range.e.c
+
+    const structuredData: any[][] = []
+    for (let row = 0; row <= maxRow; row++) {
+      const rowData: any[] = []
+      for (let col = 0; col <= maxCol; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col })
+        const cell = worksheet[cellAddress]
+        let cellData: any = {
+          value: null,
+          address: cellAddress,
+          row: row + 1,
+          col: col + 1
+        }
+
+        if (cell) {
+          if (cell.t === 'f' && cell.f) {
+            cellData.formula = cell.f
+            cellData.value = cell.v !== undefined ? cell.v : null
+          } else if (cell.f) {
+            cellData.formula = cell.f
+            cellData.value = cell.v !== undefined ? cell.v : null
+          } else if (cell.t === 'd') {
+            cellData.value = cell.v instanceof Date ? cell.v.toISOString() : cell.v
+          } else if (cell.t === 'b') {
+            cellData.value = cell.v
+          } else if (cell.t === 'n') {
+            cellData.value = cell.v
+          } else if (cell.t === 's') {
+            cellData.value = cell.v
+          } else if (cell.t === 'e') {
+            cellData.value = `#ERROR: ${cell.v}`
+          } else {
+            if (cell.f) {
+              cellData.formula = cell.f
+            }
+            cellData.value = cell.v
+          }
+        }
+        rowData.push(cellData)
+      }
+      structuredData.push(rowData)
+    }
+
+    sheets.push({
+      name: sheetName,
+      data: structuredData,
+      maxRow: maxRow + 1,
+      maxCol: maxCol + 1
+    })
+  }
+
+  return {
+    fileName,
+    sheets,
+    uploadedAt: new Date().toISOString()
   }
 }
 

@@ -1,166 +1,73 @@
 # Excel Comparison Tool
 
-A powerful web-based tool for comparing Excel files and analyzing changes in formulas, values, and structure.
+A Next.js application for comparing Excel files, identifying changes in values and formulas.
 
-## ✨ Features
+## Features
 
-- **📊 Excel File Comparison**: Compare two Excel files side-by-side
-- **🔍 Formula Analysis**: Detect and analyze formula changes
-- **📈 Value Impact Tracking**: See how formula changes affect calculated values
-- **🎯 Smart Filtering**: Filter by change type, formula changes, and search
-- **📋 Detailed Reporting**: Comprehensive change summaries and statistics
-- **💻 Modern UI**: Clean, responsive interface built with Next.js and Tailwind CSS
+- **File Upload**: Upload two Excel files for comparison.
+- **Detailed Comparison**: View differences in cell values and formulas.
+- **Sorting and Filtering**: Sort by columns and filter by change type or formula modifications.
+- **Formula Analysis**: Detailed breakdown of formula changes (references, functions).
+- **Value Impact**: Visual indicators for value changes (increase/decrease).
 
-## 🚀 Deployment to Vercel
+## Quick Deploy to Vercel
 
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- [Git](https://git-scm.com/) installed
-- [Vercel CLI](https://vercel.com/cli) (optional, for advanced deployment)
+1. Click "Deploy to Vercel" button or use Vercel CLI: `vercel`
+2. Configure environment variables in Vercel dashboard (see Configuration section).
+3. After deployment, access the app via the provided URL.
 
-### Quick Deploy (Recommended)
+## Manual Deployment (Vercel CLI)
 
-1. **Push your code to GitHub**
-   ```bash
-   git add .
-   git commit -m "Ready for Vercel deployment"
-   git push origin main
-   ```
-
-2. **Deploy to Vercel**
-   - Go to [vercel.com](https://vercel.com)
-   - Sign up/Login with your GitHub account
-   - Click "New Project"
-   - Import your GitHub repository
-   - Vercel will automatically detect it's a Next.js project
-   - Click "Deploy"
-
-3. **Environment Setup**
-   - No environment variables needed for basic functionality
-   - Vercel will automatically install dependencies and build the project
-
-### Manual Deployment with CLI
-
-1. **Install Vercel CLI**
-   ```bash
-   npm i -g vercel
-   ```
-
-2. **Deploy from your project directory**
-   ```bash
-   vercel
-   ```
-
-3. **Follow the prompts**
-   - Link to existing project or create new
-   - Confirm deployment settings
-   - Wait for build and deployment
-
-## 🔧 Configuration
-
-### Vercel Settings
-- **Build Command**: `npm run build` (auto-detected)
-- **Output Directory**: `.next` (auto-detected)
-- **Install Command**: `npm install` (auto-detected)
-- **Node.js Version**: 18.x (auto-detected)
-
-### File Upload Limits
-- **Maximum File Size**: 10MB per file (Vercel default)
-- **Supported Formats**: `.xlsx`, `.xls`
-- **Processing Time**: Up to 30 seconds per file
-
-## 📱 Client Usage
-
-### For Your Clients
-
-1. **Access the Tool**
-   - Share the Vercel deployment URL with your clients
-   - No installation required - works in any modern browser
-
-2. **Using the Tool**
-   - **Upload Files**: Drag & drop or click to upload two Excel files
-   - **View Results**: See a comprehensive comparison summary
-   - **Analyze Changes**: Use filters to focus on specific types of changes
-   - **Export Results**: Copy/paste or screenshot the results
-
-3. **Supported Use Cases**
-   - **Financial Models**: Compare budget versions, forecast updates
-   - **Data Analysis**: Track changes in data processing workflows
-   - **Reporting**: Identify modifications in report templates
-   - **Audit Trails**: Document changes between file versions
-
-## 🛠️ Development
-
-### Local Development
 ```bash
+# Clone repository
+git clone <repository-url>
+cd excel-compare-app
+
+# Install dependencies
 npm install
+
+# Deploy to Vercel
+vercel
+```
+
+## Configuration
+
+Ensure these environment variables are set in Vercel dashboard or `.env.local` for local development:
+
+- `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase project URL.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase anonymous key for public access.
+
+## Setting Up Supabase
+
+1. **Create a Supabase Project**: Go to [Supabase](https://supabase.com/) and create a new project.
+2. **Set Up Storage**: In your Supabase dashboard, go to the "Storage" section and create a new bucket named `excel-files`. Make sure it's public if you want anyone to upload files without authentication.
+3. **Get Credentials**: From your Supabase dashboard, get your project URL and anonymous key.
+4. **Add Credentials to Vercel**: In your Vercel dashboard, go to your project settings, and under "Environment Variables", add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` with the values from Supabase.
+5. **Local Development**: For local development, create a `.env.local` file in the root of your project and add the same environment variables.
+
+## Client Usage
+
+1. Upload first Excel file.
+2. Upload second Excel file.
+3. View comparison results with sorting/filtering options.
+4. Use "Formula Changes Analysis" for detailed formula insights.
+
+## Troubleshooting
+
+- **Upload Errors**: Ensure files are valid Excel formats (.xlsx, .xls).
+- **Comparison Errors**: Check file sizes; very large files may timeout (consider breaking into smaller comparisons).
+- **Formula Not Showing**: Ensure formulas are correctly formatted in Excel.
+- **Vercel Deployment Issues**: Verify environment variables are set and redeploy.
+- **Supabase Issues**: Ensure your Supabase bucket is set up correctly and the credentials are accurate in your environment variables.
+
+## Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
 ```
 
-### Building for Production
-```bash
-npm run build
-npm start
-```
-
-## 📊 Performance
-
-- **Build Time**: ~2-3 minutes on Vercel
-- **Cold Start**: ~1-2 seconds
-- **File Processing**: Up to 10MB files in under 30 seconds
-- **Concurrent Users**: Supports multiple simultaneous users
-
-## 🔒 Security
-
-- **File Processing**: All processing happens server-side
-- **No Data Storage**: Files are processed in memory and discarded
-- **HTTPS Only**: Automatic SSL/TLS encryption on Vercel
-- **Security Headers**: XSS protection, content type validation
-
-## 📈 Scaling
-
-- **Automatic Scaling**: Vercel handles traffic spikes automatically
-- **Global CDN**: Content delivered from edge locations worldwide
-- **Serverless Functions**: Pay only for actual usage
-- **Monitoring**: Built-in analytics and error tracking
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-1. **Build Failures**
-   - Check Node.js version compatibility
-   - Ensure all dependencies are in package.json
-   - Verify TypeScript compilation
-
-2. **File Upload Issues**
-   - Check file size limits (10MB max)
-   - Ensure file format is .xlsx or .xls
-   - Verify file isn't corrupted
-
-3. **Formula Not Showing**
-   - Check browser console for errors
-   - Ensure Excel file contains actual formulas
-   - Try with a simple test file first
-
-### Support
-
-- **Vercel Status**: [status.vercel.com](https://status.vercel.com)
-- **Next.js Documentation**: [nextjs.org/docs](https://nextjs.org/docs)
-- **XLSX Library**: [github.com/SheetJS/sheetjs](https://github.com/SheetJS/sheetjs)
-
-## 🎯 Next Steps
-
-1. **Deploy to Vercel** using the steps above
-2. **Test with your Excel files** to ensure formulas are working
-3. **Share the URL** with your clients
-4. **Monitor usage** through Vercel dashboard
-5. **Gather feedback** and iterate on features
-
-## 📝 License
-
-This project is private and proprietary. All rights reserved.
-
----
-
-**Ready to deploy?** Follow the deployment steps above and your clients will be using this powerful Excel comparison tool in minutes! 🚀
+Open [http://localhost:3000](http://localhost:3000) to view the app.
