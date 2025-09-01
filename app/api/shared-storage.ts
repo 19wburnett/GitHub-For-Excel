@@ -1,4 +1,4 @@
-import { ExcelData } from '../../types'
+import { ExcelData } from '../types'
 
 // In-memory storage for uploaded files (in production, use Redis or database)
 export const fileStorage = new Map<string, ExcelData>()
