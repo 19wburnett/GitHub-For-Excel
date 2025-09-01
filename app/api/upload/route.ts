@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { ExcelData, SheetData, CellData } from '../../types'
+import { fileStorage } from '../shared-storage'
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
@@ -135,7 +136,17 @@ export async function POST(request: NextRequest) {
       uploadedAt: new Date().toISOString()
     }
 
-    return NextResponse.json(excelData)
+    // Generate unique ID and store the data
+    const fileId = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    fileStorage.set(fileId, excelData)
+
+    // Return file ID instead of full data
+    return NextResponse.json({
+      fileId,
+      fileName: file.name,
+      sheetCount: sheets.length,
+      message: 'File uploaded successfully. Use the fileId for comparison.'
+    })
 
   } catch (error) {
     console.error('Error processing Excel file:', error)
@@ -144,4 +155,21 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+// New endpoint to retrieve file data by ID
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const fileId = searchParams.get('fileId')
+  
+  if (!fileId) {
+    return NextResponse.json({ error: 'File ID required' }, { status: 400 })
+  }
+  
+  const fileData = fileStorage.get(fileId)
+  if (!fileData) {
+    return NextResponse.json({ error: 'File not found' }, { status: 404 })
+  }
+  
+  return NextResponse.json(fileData)
 }

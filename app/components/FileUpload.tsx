@@ -7,9 +7,10 @@ interface FileUploadProps {
   label: string
   onFileUpload: (data: ExcelData) => void
   fileData: ExcelData | null
+  onUploadSuccess?: (data: ExcelData) => void
 }
 
-export default function FileUpload({ label, onFileUpload, fileData }: FileUploadProps) {
+export default function FileUpload({ label, onFileUpload, fileData, onUploadSuccess }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,6 +64,10 @@ export default function FileUpload({ label, onFileUpload, fileData }: FileUpload
       if (response.ok) {
         const data = await response.json()
         onFileUpload(data)
+        // Call onUploadSuccess if provided
+        if (onUploadSuccess) {
+          onUploadSuccess(data)
+        }
       } else {
         const errorData = await response.json()
         setError(errorData.error || 'Upload failed')

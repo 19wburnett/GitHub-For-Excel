@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ExcelData, ComparisonResult, SheetDiff, CellDiff, SheetData } from '../../types'
+import { fileStorage } from '../shared-storage'
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
