@@ -64,7 +64,11 @@ export async function POST(request: NextRequest) {
           if (cell) {
             // Handle different cell types
             if (cell.t === 'f' && cell.f) {
-              // Formula cell
+              // Formula cell - primary case
+              cellData.formula = cell.f
+              cellData.value = cell.v !== undefined ? cell.v : null
+            } else if (cell.f) {
+              // Cell has formula but might not be marked as type 'f'
               cellData.formula = cell.f
               cellData.value = cell.v !== undefined ? cell.v : null
             } else if (cell.t === 'd') {
@@ -83,8 +87,21 @@ export async function POST(request: NextRequest) {
               // Error cell
               cellData.value = `#ERROR: ${cell.v}`
             } else {
-              // Default case
+              // Default case - check if it might have a formula
+              if (cell.f) {
+                cellData.formula = cell.f
+              }
               cellData.value = cell.v
+            }
+            
+            // Debug logging for formula cells
+            if (cellData.formula) {
+              console.log(`Found formula in ${cellAddress}:`, {
+                formula: cellData.formula,
+                value: cellData.value,
+                cellType: cell.t,
+                hasFormula: !!cell.f
+              })
             }
           }
 

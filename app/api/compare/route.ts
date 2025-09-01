@@ -199,5 +199,22 @@ function isEqual(a: any, b: any): boolean {
     return a.toLowerCase() === b.toLowerCase()
   }
   
+  // Handle formula comparisons - normalize whitespace and case
+  if (typeof a === 'string' && typeof b === 'string') {
+    const normalizeFormula = (formula: string) => {
+      return formula
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .toLowerCase() // Case insensitive
+        .trim()
+    }
+    
+    // Check if both might be formulas (start with =)
+    if (a.startsWith('=') || b.startsWith('=')) {
+      return normalizeFormula(a) === normalizeFormula(b)
+    }
+    
+    return a.toLowerCase() === b.toLowerCase()
+  }
+  
   return false
 }

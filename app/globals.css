@@ -28,4 +28,32 @@
   .file-upload-zone.dragover {
     @apply border-blue-500 bg-blue-50;
   }
+
+  .sortable-header {
+    @apply cursor-pointer hover:bg-gray-100 transition-colors;
+  }
+
+  .sortable-header:hover {
+    @apply bg-gray-100;
+  }
+
+  .formula-change-indicator {
+    @apply text-orange-600 text-xs;
+  }
+
+  .filter-control {
+    @apply px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition-colors;
+  }
+
+  .filter-control:hover {
+    @apply border-gray-400;
+  }
+
+  .search-input {
+    @apply px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 transition-colors;
+  }
+
+  .search-input:focus {
+    @apply ring-2 ring-blue-500 border-blue-500;
+  }
 }
